@@ -84,8 +84,8 @@ if get(H.cluster_sort,'Value') == 0
 end
 
 if get(H.cluster_sort,'Value') == 1
-	YSG_hi_tmp = dist_data(:,1) + dist_data(:,2);
-end	
+	YSG_hi_tmp = dist_data(:,1) + 2*dist_data(:,2);
+end
 
 [~,sortIdx0] = sort(YSG_hi_tmp);	
 dist_data_sort0 = dist_data(sortIdx0,:);
@@ -110,15 +110,15 @@ if get(H.min_clust,'Value') == 1
 	mode_req = str2num(get(H.min_clust_t,'String'));
 	
 	for i = 1:length(locs)
-		[YPP_val(i,1),YPP_idx(i,1)] = min(abs(locs(1,i)-x(locsP)))
+		[YPP_val(i,1),~] = min(abs(locs(1,i)-x(locsP)));
 	end
 	
 	YPP_min_lo = locs' - YPP_val;
 	YPP_min_hi = locs' + YPP_val;
 		
 	for i = 1:length(locs)
-		[~,YPP_min_lo_idx(i,1)] = min(abs(YPP_min_lo(i,1)-x))
-		[~,YPP_min_hi_idx(i,1)] = min(abs(YPP_min_hi(i,1)-x))	
+		[~,YPP_min_lo_idx(i,1)] = min(abs(YPP_min_lo(i,1)-x));
+		[~,YPP_min_hi_idx(i,1)] = min(abs(YPP_min_hi(i,1)-x));	
 	end
 	
 	%figure % for QC of gaussian decomposition
@@ -134,19 +134,35 @@ if get(H.min_clust,'Value') == 1
 		%plot(x,fhat)	
 	end
 	
+
+% 	mode_ints = fixed.Interval(f_mode_lo,f_mode_hi);
+% 	age_ints = fixed.Interval(dist_data(:,1) - 2*dist_data(:,2), dist_data(:,1) + 2*dist_data(:,2));
+% 		
+% 	for i = 1:length(locs)
+% 		YPP_idx(:,i) = overlaps(age_ints,mode_ints(i));
+% 		if sum(YPP_idx(:,i)) >= mode_req
+% 			break
+% 		end
+% 	end
+% 	YPP_data = dist_data(YPP_idx(:,i),:)
+		
+			
 	YPP_dist_hi = dist_data(:,1) + 2*dist_data(:,2);
-	YPP_dist_lo = dist_data(:,1) - 2*dist_data(:,2);
-	
-	for i = 1:length(locs)
-		YPP_sum = sum(YPP_dist_hi > f_mode_lo(i,1) & f_mode_hi(i,1) > YPP_dist_hi |...
+	YPP_dist_lo = dist_data(:,1) - 2*dist_data(:,2);		
+			
+			
+	for i = 1:length(locs)	
+		YPP_idx(:,i) = YPP_dist_hi > f_mode_lo(i,1) & f_mode_hi(i,1) > YPP_dist_hi |...
 			YPP_dist_lo > f_mode_lo(i,1) & f_mode_hi(i,1) > YPP_dist_lo |...
-			dist_data(:,1) > f_mode_lo(i,1) & f_mode_hi(i,1) > dist_data(:,1))
-		if YPP_sum >= mode_req
+			dist_data(:,1) > f_mode_lo(i,1) & f_mode_hi(i,1) > dist_data(:,1) |...
+			f_mode_lo(i,1) < YPP_dist_hi & f_mode_hi(i,1) > YPP_dist_lo;
+		if sum(YPP_idx(:,i)) >= mode_req
 			break
 		end
 	end
 	
-	YPP = f_mode(i,1);
+	f_mode_idx = i;
+	YPP = f_mode(f_mode_idx,1);
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -154,26 +170,39 @@ end
 
 %Youngest Gaussian Fit of PDP (YGF)
 
-x_YGF=0:0.1:4500;
-pdp_YGF = pdp5(dist_data_perm(:,1),dist_data_perm(:,2),0,4500,0.1); %1 sigma pdp input data
-pdp_YGF = pdp_YGF/1/sum(pdp_YGF); % normalize pdp to 1
-[trs,trlocs] = findpeaks(-pdp_YGF,x_YGF);
+if get(H.min_clust,'Value') == 0		
+	x_YGF=0:0.1:4500;
+	pdp_YGF = pdp5(dist_data_perm(:,1),dist_data_perm(:,2),0,4500,0.1); %1 sigma pdp input data
+	pdp_YGF = pdp_YGF/1/sum(pdp_YGF); % normalize pdp to 1
+	[trs,trlocs] = findpeaks(-pdp_YGF,x_YGF);
+	
+	if isempty(trlocs) == 0
+		tridx = find(x_YGF==trlocs(1,1));
+	else
+		tridx = find(x_YGF==str2num(get(H.xmaxp,'string')));
+	end
+	
+	[YGF_minr, YGF_minc] = find(pdp_YGF(1:tridx)>1E-6);
+	YGF_x = x_YGF(min(YGF_minc):tridx);
+	YGF_pdp = pdp_YGF(min(YGF_minc):tridx);
+	f = fit(YGF_x',YGF_pdp','gauss1');
+	YGF = f.b1;
+	YGF_1s = f.c1/sqrt(2);
+	YGF_2s = YGF_1s*2;
+	x32 = [0:0.1:4500];
+	Yhat = feval(f,x32);
+end	
 
-if isempty(trlocs) == 0
-	tridx = find(x_YGF==trlocs(1,1));	
-else
-	tridx = find(x_YGF==str2num(get(H.xmaxp,'string')));
+if get(H.min_clust,'Value') == 1
+	i = f_mode_idx;
+	f = fit(x(1,YPP_min_lo_idx(i,1):YPP_min_hi_idx(i,1))',pdp(1,YPP_min_lo_idx(i,1):YPP_min_hi_idx(i,1))','gauss1');
+	YGF = f.b1;
+	YGF_1s = f.c1/sqrt(2);
+	YGF_2s = YGF_1s*2;
+	x32 = [0:0.1:4500];
+	Yhat = feval(f,x32);
 end
 
-[YGF_minr, YGF_minc] = find(pdp_YGF(1:tridx)>1E-6);
-YGF_x = x_YGF(min(YGF_minc):tridx);
-YGF_pdp = pdp_YGF(min(YGF_minc):tridx);
-f = fit(YGF_x',YGF_pdp','gauss1');
-YGF = f.b1;
-YGF_1s = f.c1/sqrt(2);
-YGF_2s = YGF_1s*2;
-x32 = [0:0.1:4500];
-Yhat = feval(f,x32);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -201,26 +230,23 @@ if get(H.include_YG,'Value') == 1
 		if YGC1s_lo_LT(i,1) == 0
 			break
 		end
-		YGC1s_data(i,:) = dist_data_sort1(i,:);
 	end
+	YGC1s_data = dist_data_sort1(1:i-1,:)
 end
 
 if get(H.include_YG,'Value') == 0
 	for i = 1:length(dist_data_sort1(:,1))
 		YGC1s_mat(:,i) = YGC1s_hi(i,1) > YGC1s_lo;
 	end
-	YGC1s_sums = 0;
-	for i = 1:length(dist_data_sort1(:,1));
-		YGC1s_sums(i,1) = sum(YGC1s_mat(i:end,i));
+	for i = 1:length(YGC1s_mat(1,:))-1
+		if YGC1s_mat(i+1,i) == 1
+			break
+		end
 	end
-	YGC1s_find = find(YGC1s_sums>1);
-	if isempty(find(YGC1s_sums>1)) == 0
-		YGC1s_idx = YGC1s_find(1,1);
-		YGC1s_data = dist_data_sort1(YGC1s_idx:YGC1s_idx+YGC1s_sums(YGC1s_idx,1)-1,:);
-	else
-		YGC1s_data = 0;
-	end
+	YGC1s_idx = find(YGC1s_mat(:,i)==0, 1, 'first');
+	YGC1s_data = dist_data_sort1(i:YGC1s_idx-1,:);
 end
+
 
 if YGC1s_data ~= 0
 	[YGC1s,YGC1s_1s,YGC1s_2s,YGC1s_mswd] = wm(YGC1s_data);
@@ -241,7 +267,7 @@ if get(H.cluster_sort,'Value') == 0
 end
 
 if get(H.cluster_sort,'Value') == 1
-	YGC2s_hi_tmp = dist_data(:,1) + dist_data(:,2);
+	YGC2s_hi_tmp = dist_data(:,1) + 2*dist_data(:,2);
 end	
 
 [~,sortIdx2] = sort(YGC2s_hi_tmp);
@@ -257,26 +283,26 @@ if get(H.include_YG,'Value') == 1
 		if YGC2s_lo_LT(i,1) == 0
 			break
 		end
-		YGC2s_data(i,:) = dist_data_sort2(i,:);
 	end
+	YGC2s_data = dist_data_sort2(1:i-1,:);
 end
 
 if get(H.include_YG,'Value') == 0
 	for i = 1:length(dist_data_sort2(:,1))
 		YGC2s_mat(:,i) = YGC2s_hi(i,1) > YGC2s_lo;
 	end
-	YGC2s_sums = 0;
-	for i = 1:length(dist_data_sort2(:,1));
-		YGC2s_sums(i,1) = sum(YGC2s_mat(i:end,i));
+	for i = 1:length(YGC2s_mat(1,:))-2
+		if YGC2s_mat(i+1,i) == 1 && YGC2s_mat(i+2,i)
+			break
+		end
 	end
-	YGC2s_find = find(YGC2s_sums>2);
-	if isempty(find(YGC2s_sums>1)) == 0
-		YGC2s_idx = YGC2s_find(1,1);
-		YGC2s_data = dist_data_sort2(YGC2s_idx:YGC2s_idx+YGC2s_sums(YGC2s_idx,1)-1,:);
-	else
-		YGC2s_data = 0;
-	end
+	YGC2s_idx = find(YGC2s_mat(:,i)==0, 1, 'first');
+	YGC2s_data = dist_data_sort2(i:YGC2s_idx-1,:);
 end
+
+
+
+
 
 if length(YGC2s_data(:,1)) > 2
 	[YGC2s,YGC2s_1s,YGC2s_2s,YGC2s_mswd] = wm(YGC2s_data);
@@ -286,6 +312,25 @@ else
 	YGC2s_2s = 0;
 	YGC2s_mswd = 0;
 end
+	
+	
+	
+			
+			
+		
+			
+			
+			
+			
+			
+			
+			
+			
+			
+	
+	
+		
+		
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -317,38 +362,26 @@ Y3Za_data = dist_data(1:3,:);
 
 % Tau method (Barbeau et al., 2009)
 
-[~,locsT] = findpeaks(-pdp);
+
+
+
+
 
 if get(H.min_clust,'Value') == 0
-	
-	if isempty(locsT) == 0
-		TAU_lim = x(locsT(1,1));
-	end
-	
-	TAU_data = dist_data(dist_data(:,1)<TAU_lim,:);
+	TAU_data = dist_data(dist_data(:,1) < x(locsP(1,1)),:);
 	[TAU,TAU_1s,TAU_2s,TAU_mswd]  = wm(TAU_data);
-	
-	
 end
 
 if get(H.min_clust,'Value') == 1
-	
 	mode_req = str2num(get(H.min_clust_t,'String'));
 	
-	TAU_nadirs = x(locsT);
-	
-	for i = 1:length(TAU_nadirs)-1
-		TAU_min = TAU_nadirs(1,i);
-		TAU_max = TAU_nadirs(1,i+1);
-		
-		if length(dist_data(dist_data(:,1)>TAU_min & dist_data(:,1)<TAU_max,1)) >= mode_req
+	for i = 1:length(locs)	
+		TAU_idx(:,i) = dist_data(:,1) > f_mode_lo(i,1) & f_mode_hi(i,1) > dist_data(:,1);
+		if sum(TAU_idx(:,i)) >= mode_req
 			break
 		end
-		
 	end
-	
-	TAU_data = dist_data(dist_data(:,1)>TAU_min & dist_data(:,1)<TAU_max,:)
-	
+	TAU_data = dist_data(TAU_idx(:,i),:);
 	if length(TAU_data(:,1)) >= mode_req
 		[TAU,TAU_1s,TAU_2s,TAU_mswd]  = wm(TAU_data);
 	else
@@ -360,20 +393,168 @@ if get(H.min_clust,'Value') == 1
 	
 end
 
+
+
+
+% 
+% 
+% 
+% 
+% for i = 1:length(locs)
+% 	TAU_sum(i,1) = sum(dist_data(:,1) > f_mode_lo(i,1) & dist_data(:,1) < f_mode_hi(i,1) );
+% 	if TAU_sum(i,1) >= mode_req
+% 		break
+% 	end
+% end
+% 	
+% TAU_idx = dist_data(:,1) > f_mode_lo(i,1) & dist_data(:,1) < f_mode_hi(i,1)
+% 
+% TAU_data = dist_data(TAU_idx,:)
+% 
+% 
+% 
+% 
+
+
+
+
+
+
+
+
+
+
+
+% 		|...
+% 			YPP_dist_lo > f_mode_lo(i,1) & f_mode_hi(i,1) > YPP_dist_lo |...
+% 			dist_data(:,1) > f_mode_lo(i,1) & f_mode_hi(i,1) > dist_data(:,1));
+% 		if YPP_sum >= mode_req
+% 			break
+% 		end
+%	end
+
+%f_mode_idx = i;
+%YPP = f_mode(f_mode_idx,1);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% 
+% 
+% 
+% 
+% 
+% if get(H.min_clust,'Value') == 1
+% 	
+% 	
+% 
+% 	mode_req = str2num(get(H.min_clust_t,'String'));
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	
+% 	TAU_nadirs = x(locsT);
+% 	
+% 	for i = 1:length(TAU_nadirs)-1
+% 		TAU_min = TAU_nadirs(1,i);
+% 		TAU_max = TAU_nadirs(1,i+1);
+% 		
+% 		if length(dist_data(dist_data(:,1) > TAU_min & dist_data(:,1) < TAU_max,1)) >= mode_req
+% 			break
+% 		end
+% 		
+% 	end
+% 	
+% 	TAU_data = dist_data(dist_data(:,1) > TAU_min & dist_data(:,1) < TAU_max,:)
+% 	
+% % 	if length(TAU_data(:,1)) >= mode_req
+% % 		[TAU,TAU_1s,TAU_2s,TAU_mswd]  = wm(TAU_data);
+% 	else
+% 		TAU = 0;
+% 		TAU_1s = 0;
+% 		TAU_2s = 0;
+% 		TAU_mswd = 0;
+% 	end
+% % 	
+% % end
+% % 	
+% % 	
+% 	
+% 	
+% 	
+% 	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Youngest Statistical Population (YSP)
-if get(H.cluster_sort,'Value') == 0
-	YSP_hi_tmp = dist_data(:,1);
-end
 
-if get(H.cluster_sort,'Value') == 1
-	YSP_hi_tmp = dist_data(:,1) + dist_data(:,2);
-end	
+% if get(H.cluster_sort,'Value') == 0
+% 	YSP_hi_tmp = dist_data(:,1);
+% end
+% 
+% if get(H.cluster_sort,'Value') == 1
+% 	YSP_hi_tmp = dist_data(:,1) + 2*dist_data(:,2);
+% end	
 
-[~,sortIdx3] = sort(YSP_hi_tmp);
-dist_data_sort3 = dist_data(sortIdx3,:);
+% [~,sortIdx3] = sort(YSP_hi_tmp);
+% dist_data_sort3 = dist_data(sortIdx3,:);
+
+dist_data_sort3 = dist_data;
 
 if get(H.include_YG,'Value') == 1
 	for i = 1:length(dist_data_sort3(:,1))-1
@@ -399,6 +580,25 @@ if get(H.include_YG,'Value') == 0
 	YSP_1s = YSP_1s(YSP_idx,1);
 	YSP_2s = YSP_2s(YSP_idx,1);
 	YSP_mswd = YSP_mswdt(YSP_idx,1);
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
 	if min(YSP_mswdt) > 1
 		clear YSP_sub
 		ysptest = 0;
@@ -433,34 +633,28 @@ if get(H.include_YG,'Value') == 0
 	end
 end
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-
-
-
-
-
-
-
-
-
-
-if get(H.setx,'Value') == 1
-	
-	X = [YSG;YPP;YGF;YGC1s;YGC2s;Y3Zo;Y3Za;TAU;YSP];
-	X_unc = [YSG_2s;0.000001;YGF_2s;YGC1s_2s;YGC2s_2s;Y3Zo_2s;Y3Za_2s;TAU_2s;YSP_2s];
-	xmin = round(min(nonzeros(X(:,1))-nonzeros(X_unc(:,1))) - 1); % make nice plots
-	xmax = round(max(nonzeros(X(:,1))+nonzeros(X_unc(:,1))) + 1); % make nice plots
-	
-	
-	set(H.xminp,'String',xmin)
-	set(H.xmaxp,'String',xmax)
-end
+% X axes
 
 if get(H.setx,'Value') == 0
 	xmin = str2num(get(H.xminp,'String'));
 	xmax = str2num(get(H.xmaxp,'String'));
 end
+
+if get(H.setx,'Value') == 1
+	X = [YSG;YPP;YGF;YGC1s;YGC2s;Y3Zo;Y3Za;TAU;YSP];
+	X_unc = [YSG_2s;0.000001;YGF_2s;YGC1s_2s;YGC2s_2s;Y3Zo_2s;Y3Za_2s;TAU_2s;YSP_2s];
+	xmin = round(min(nonzeros(X(:,1))-nonzeros(X_unc(:,1))) - 1); % make nice plots
+	xmax = round(max(nonzeros(X(:,1))+nonzeros(X_unc(:,1))) + 1); % make nice plots
+	set(H.xminp,'String',xmin)
+	set(H.xmaxp,'String',xmax)
+end
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Make Age plot
 
@@ -475,13 +669,15 @@ end
 
 hold on
 
-gauss_adj = Yhat*(1/(max(Yhat)/pks(1,1)));
+[~,idx] = min(abs(x-YPP));
+gauss_adj = Yhat*(1/(max(Yhat)/pdp(idx)));
+
 p = plot(x, pdp, 'Color', 'b', 'LineWidth', 2);
 p1 = plot(x32,gauss_adj,'Color',[1 0 0]);
 set(p,'linewidth',2)
 set(p1,'linewidth',2)
-s1 = scatter(locs(1,1),pks(1,1), 150, 'filled', 'v', 'markeredgecolor', 'k',  'markerfacecolor', 'b', 'linewidth', 2);
-s2 = scatter(YGF,pks(1,1), 150, 'filled', 'v', 'markeredgecolor', 'k',  'markerfacecolor', [1 0 0], 'linewidth', 2);
+s1 = scatter(YPP,pdp(idx), 150, 'filled', 'v', 'markeredgecolor', 'k',  'markerfacecolor', 'b', 'linewidth', 2);
+s2 = scatter(YGF,pdp(idx), 150, 'filled', 'v', 'markeredgecolor', 'k',  'markerfacecolor', [1 0 0], 'linewidth', 2);
 lgnd = legend([p, p1, s1, s2], 'Probability Density Plot', 'Youngest Gaussian Fit', 'YPP', 'YGF', 'fontsize',12);
 set(lgnd,'Color','w');
 set(gca, 'box', 'on')
@@ -491,16 +687,10 @@ ylabel('Probability','Color','k')
 xlim([xmin xmax])
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-
-
-
-
-
-
-
-
+% Ranked age plot
 
 
 if get(H.cluster_sort,'Value') == 0
@@ -509,7 +699,7 @@ if get(H.cluster_sort,'Value') == 0
 end
 
 if get(H.cluster_sort,'Value') == 1
-	data2_hi_tmp = dist_data(:,1) + dist_data(:,2);
+	data2_hi_tmp = dist_data(:,1) + 2*dist_data(:,2);
 	[~,sortIdx2] = sort(data2_hi_tmp);
 	data2 = dist_data(sortIdx2,:);
 	data2 = data2(data2(:,1) < xmax,:);
@@ -524,12 +714,19 @@ if H.exportplot == 1
 	figure;
 end
 
+
+
+
 if H.exportplot == 0
 	cla(H.axes58,'reset');
 	axes(H.axes58);
 end
 
 hold on
+
+
+
+
 data2(:,2) = 2*data2(:,2);
 ppp2 = plot([x2; x2], [(data2(:,1)+data2(:,2))'; (data2(:,1)-data2(:,2))'], '-r', 'Color', [.4 .6 1], 'LineWidth',5); % Error bars, nicer than the errorbar function
 ppp1 = plot([x2; x2], [(data2(:,1)+data2(:,2)./2)'; (data2(:,1)-data2(:,2)./2)'], '-r', 'Color', 'k', 'LineWidth',5); % Error bars, nicer than the errorbar function
@@ -557,24 +754,11 @@ if H.exportplot == 1
 end
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-% Make results plot
+% MDAs plot
 
 if H.exportplot == 1
 	figure;
@@ -582,11 +766,9 @@ end
 if H.exportplot == 0
 	cla(H.axes_mda,'reset');
 	axes(H.axes_mda);
-	
 end
 hold on
 
-% Compile results
 X = [1:1:9];
 Y = [YSG;YPP;YGF;YGC1s;YGC2s;Y3Zo;Y3Za;TAU;YSP];
 Y_unc = [YSG_2s;0.000001;YGF_2s;YGC1s_2s;YGC2s_2s;Y3Zo_2s;Y3Za_2s;TAU_2s;YSP_2s];
@@ -602,9 +784,6 @@ if get(H.sety,'Value') == 0
 	yminp = str2num(get(H.ymin,'String'));
 	ymaxp = str2num(get(H.ymax,'String'));
 end
-
-
-
 
 x3 = [1:1:9];
 pp2 = plot([x3; x3], [(Y+Y_unc)'; (Y-Y_unc)'], '-r', 'Color', [.4 .6 1], 'LineWidth',7); % Error bars, nicer than the errorbar function
@@ -622,8 +801,11 @@ set(gca,'YDir','reverse')
 legend([pp2(1) pp1(1)], [{'2s'}, {'1s'}], 'Location','southwest');
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Make table
+
 tdata = [{sprintf('%1.2f',YSG)},{sprintf('%1.2f',YSG_1s)},{sprintf('%1.2f',YSG_2s)},{sprintf('%.f',1)},{'NA'};
 	{sprintf('%1.2f',YPP)},{'NA'},{'NA'},{'NA'},{'NA'};
 	{sprintf('%1.2f',YGF)},{sprintf('%1.2f',YGF_1s)},{sprintf('%1.2f',YGF_2s)},{'NA'},{'NA'};
@@ -734,7 +916,4 @@ function min_clust_Callback(hObject, eventdata, H)
 plot_distribution(hObject, eventdata, H)
 
 function min_clust_t_Callback(hObject, eventdata, H)
-plot_distribution(hObject, eventdata, H)
-
-function plot_decomp_Callback(hObject, eventdata, H)
 plot_distribution(hObject, eventdata, H)
