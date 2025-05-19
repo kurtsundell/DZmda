@@ -96,10 +96,20 @@ YSG_2s = 2*dist_data_sort0(1,2);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%Youngest graphical peak (YPP)
+%Youngest graphical peak (YPP) modified 2025-05-19
 
 [pks,locs] = findpeaks(pdp,x);
 [~,locsP] = findpeaks(-pdp);
+
+if isempty(locsP) == 1
+	f0 = fit(x',pdp','gauss1');
+	f0_mode = f0.b1;
+	f0_1s = f0.c1/sqrt(2);
+	f0_2s = f0_1s*2;
+	f0hat = feval(f0,x);
+	f0_mode_lo = f0_mode - f0_2s;
+	f0_mode_hi = f0_mode + f0_2s;
+end
 
 if get(H.min_clust,'Value') == 0
 	YPP = locs(1,1);
@@ -109,16 +119,25 @@ if get(H.min_clust,'Value') == 1
 	
 	mode_req = str2num(get(H.min_clust_t,'String'));
 	
-	for i = 1:length(locs)
-		[YPP_val(i,1),~] = min(abs(locs(1,i)-x(locsP)));
+	if isempty(locsP) == 0
+		for i = 1:length(locs)
+			[YPP_val(i,1),~] = min(abs(locs(1,i)-x(locsP)));
+		end
+		
+		YPP_min_lo = locs' - YPP_val;
+		YPP_min_hi = locs' + YPP_val;
+		
+		for i = 1:length(locs)
+			[~,YPP_min_lo_idx(i,1)] = min(abs(YPP_min_lo(i,1)-x));
+			[~,YPP_min_hi_idx(i,1)] = min(abs(YPP_min_hi(i,1)-x));
+		end
 	end
 	
-	YPP_min_lo = locs' - YPP_val;
-	YPP_min_hi = locs' + YPP_val;
-		
-	for i = 1:length(locs)
-		[~,YPP_min_lo_idx(i,1)] = min(abs(YPP_min_lo(i,1)-x));
-		[~,YPP_min_hi_idx(i,1)] = min(abs(YPP_min_hi(i,1)-x));	
+	if isempty(locsP) == 1
+		for i = 1:length(locs)
+			[~,YPP_min_lo_idx(i,1)] = min(abs(f0_mode_lo-x));
+			[~,YPP_min_hi_idx(i,1)] = min(abs(f0_mode_hi-x));
+		end
 	end
 	
 	%figure % for QC of gaussian decomposition
@@ -134,22 +153,8 @@ if get(H.min_clust,'Value') == 1
 		%plot(x,fhat)	
 	end
 	
-
-% 	mode_ints = fixed.Interval(f_mode_lo,f_mode_hi);
-% 	age_ints = fixed.Interval(dist_data(:,1) - 2*dist_data(:,2), dist_data(:,1) + 2*dist_data(:,2));
-% 		
-% 	for i = 1:length(locs)
-% 		YPP_idx(:,i) = overlaps(age_ints,mode_ints(i));
-% 		if sum(YPP_idx(:,i)) >= mode_req
-% 			break
-% 		end
-% 	end
-% 	YPP_data = dist_data(YPP_idx(:,i),:)
-		
-			
 	YPP_dist_hi = dist_data(:,1) + 2*dist_data(:,2);
 	YPP_dist_lo = dist_data(:,1) - 2*dist_data(:,2);		
-			
 			
 	for i = 1:length(locs)	
 		YPP_idx(:,i) = YPP_dist_hi > f_mode_lo(i,1) & f_mode_hi(i,1) > YPP_dist_hi |...
